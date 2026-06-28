@@ -1,13 +1,11 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
+const { Client, GatewayIntentBits } = require("discord.js");
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildPresences
     ]
 });
 
@@ -17,53 +15,30 @@ client.once("ready", () => {
     console.log("Supporter bot is online");
 });
 
-
-// ✅ ROLE FUNCTION
-async function giveRole(member) {
-    const role = member.guild.roles.cache.get(process.env.ROLE_ID);
-    if (!role) return;
-
-    if (!member.roles.cache.has(role.id)) {
-        await member.roles.add(role);
-        console.log(`+ Role added: ${member.user.tag}`);
-    }
-}
-
-
-// 🔥 COMMAND: !scanall
-client.on("messageCreate", async (message) => {
+client.on("presenceUpdate", async (oldPresence, newPresence) => {
     try {
-        if (message.author.bot) return;
-        if (message.content !== "!scanall") return;
+        if (!newPresence) return;
 
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ No permission");
-        }
+        const member = newPresence.member;
+        if (!member) return;
 
-        const guild = message.guild;
+        const role = member.guild.roles.cache.get(process.env.ROLE_ID);
+        if (!role) return;
 
-        await guild.members.fetch();
+        const activities = newPresence.activities || [];
 
-        message.channel.send("🔍 Scanning members...");
+        const customStatus = activities.find(a => a.type === 4); // custom status
+        const text = customStatus?.state?.toLowerCase() || "";
 
-        let count = 0;
+        const hasSupport = text.includes(SUPPORT_LINK);
 
-        for (const [, member] of guild.members.cache) {
-            if (member.user.bot) continue;
-
-            const presence = member.presence;
-            if (!presence) continue; // offline skip
-
-            const activity = presence.activities?.find(a => a.type === 4);
-            const text = (activity?.state || "").toLowerCase();
-
-            if (text.includes(SUPPORT_LINK)) {
-                await giveRole(member);
-                count++;
+        // ✅ ONLY GIVE ROLE (NO REMOVAL)
+        if (hasSupport) {
+            if (!member.roles.cache.has(role.id)) {
+                await member.roles.add(role);
+                console.log(`+ Supporter role added: ${member.user.tag}`);
             }
         }
-
-        message.channel.send(`✅ Scan complete! Roles updated: ${count}`);
 
     } catch (err) {
         console.error(err);
