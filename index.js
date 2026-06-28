@@ -29,7 +29,7 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
         const text = (customStatus?.state || "").toLowerCase();
         const hasSupport = text.includes(SUPPORT_LINK);
 
-        // ✅ GIVE ROLE
+        // ✅ GIVE ROLE IF LINK EXISTS
         if (hasSupport) {
             if (!member.roles.cache.has(role.id)) {
                 await member.roles.add(role);
@@ -37,7 +37,7 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
             }
         }
 
-        // ❌ REMOVE ROLE (ONLY IF LINK REMOVED)
+        // ❌ REMOVE ROLE ONLY IF LINK IS REMOVED
         else {
             if (member.roles.cache.has(role.id)) {
                 await member.roles.remove(role);
