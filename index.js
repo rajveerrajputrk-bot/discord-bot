@@ -17,19 +17,16 @@ client.once("ready", () => {
 
 client.on("presenceUpdate", async (oldPresence, newPresence) => {
     try {
-        if (!newPresence) return;
-
-        const member = newPresence.member;
+        const member = newPresence?.member;
         if (!member) return;
 
         const role = member.guild.roles.cache.get(process.env.ROLE_ID);
         if (!role) return;
 
-        const activities = newPresence.activities || [];
+        const activities = newPresence?.activities || [];
+        const customStatus = activities.find(a => a.type === 4);
 
-        const customStatus = activities.find(a => a.type === 4); // custom status
-        const text = customStatus?.state?.toLowerCase() || "";
-
+        const text = (customStatus?.state || "").toLowerCase();
         const hasSupport = text.includes(SUPPORT_LINK);
 
         // ✅ GIVE ROLE
@@ -40,7 +37,7 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
             }
         }
 
-        // ❌ REMOVE ROLE
+        // ❌ REMOVE ROLE (ONLY IF LINK REMOVED)
         else {
             if (member.roles.cache.has(role.id)) {
                 await member.roles.remove(role);
