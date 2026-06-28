@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
 
 const client = new Client({
     intents: [
@@ -15,38 +15,48 @@ client.once("ready", () => {
     console.log("Supporter bot is online");
 });
 
-client.on("presenceUpdate", async (oldPresence, newPresence) => {
-    try {
-        const member = newPresence?.member;
-        if (!member) return;
 
-        const role = member.guild.roles.cache.get(process.env.ROLE_ID);
-        if (!role) return;
+// ✅ GIVE ROLE FUNCTION
+async function giveRole(member) {
+    const role = member.guild.roles.cache.get(process.env.ROLE_ID);
+    if (!role) return;
 
-        const activities = newPresence?.activities || [];
-        const customStatus = activities.find(a => a.type === 4);
+    if (!member.roles.cache.has(role.id)) {
+        await member.roles.add(role);
+        console.log(`+ Role added: ${member.user.tag}`);
+    }
+}
 
-        const text = (customStatus?.state || "").toLowerCase();
-        const hasSupport = text.includes(SUPPORT_LINK);
 
-        // ✅ GIVE ROLE IF LINK EXISTS
-        if (hasSupport) {
-            if (!member.roles.cache.has(role.id)) {
-                await member.roles.add(role);
-                console.log(`+ Supporter role added: ${member.user.tag}`);
+// 🔥 COMMAND: !scanall
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+
+    if (message.content === "!scanall") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+
+        const guild = message.guild;
+        await guild.members.fetch();
+
+        message.channel.send("🔍 Scanning members...");
+
+        guild.members.cache.forEach(async (member) => {
+            if (member.user.bot) return;
+
+            const presence = member.presence;
+            if (!presence) return; // ❌ skip offline users
+
+            const activities = presence.activities || [];
+            const customStatus = activities.find(a => a.type === 4);
+
+            const text = (customStatus?.state || "").toLowerCase();
+
+            if (text.includes(SUPPORT_LINK)) {
+                await giveRole(member);
             }
-        }
+        });
 
-        // ❌ REMOVE ROLE ONLY IF LINK IS REMOVED
-        else {
-            if (member.roles.cache.has(role.id)) {
-                await member.roles.remove(role);
-                console.log(`- Supporter role removed: ${member.user.tag}`);
-            }
-        }
-
-    } catch (err) {
-        console.error(err);
+        message.channel.send("✅ Scan complete!");
     }
 });
 
