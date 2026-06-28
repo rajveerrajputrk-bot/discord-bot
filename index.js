@@ -5,7 +5,9 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ]
 });
 
@@ -16,7 +18,7 @@ client.once("ready", () => {
 });
 
 
-// ✅ GIVE ROLE FUNCTION
+// ✅ ROLE FUNCTION
 async function giveRole(member) {
     const role = member.guild.roles.cache.get(process.env.ROLE_ID);
     if (!role) return;
@@ -30,33 +32,41 @@ async function giveRole(member) {
 
 // 🔥 COMMAND: !scanall
 client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+    try {
+        if (message.author.bot) return;
+        if (message.content !== "!scanall") return;
 
-    if (message.content === "!scanall") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ No permission");
+        }
 
         const guild = message.guild;
+
         await guild.members.fetch();
 
         message.channel.send("🔍 Scanning members...");
 
-        guild.members.cache.forEach(async (member) => {
-            if (member.user.bot) return;
+        let count = 0;
+
+        for (const [, member] of guild.members.cache) {
+            if (member.user.bot) continue;
 
             const presence = member.presence;
-            if (!presence) return; // ❌ skip offline users
+            if (!presence) continue; // offline skip
 
-            const activities = presence.activities || [];
-            const customStatus = activities.find(a => a.type === 4);
-
-            const text = (customStatus?.state || "").toLowerCase();
+            const activity = presence.activities?.find(a => a.type === 4);
+            const text = (activity?.state || "").toLowerCase();
 
             if (text.includes(SUPPORT_LINK)) {
                 await giveRole(member);
+                count++;
             }
-        });
+        }
 
-        message.channel.send("✅ Scan complete!");
+        message.channel.send(`✅ Scan complete! Roles updated: ${count}`);
+
+    } catch (err) {
+        console.error(err);
     }
 });
 
