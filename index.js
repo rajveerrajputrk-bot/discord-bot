@@ -14,7 +14,7 @@ const {
 const fs = require("fs");
 
 // =========================
-// CLIENT
+// CLIENT (FIXED INTENTS)
 // =========================
 const client = new Client({
     intents: [
@@ -60,7 +60,7 @@ client.once("ready", () => {
 });
 
 // =========================
-// AUTO ROLE SYSTEM (STABLE)
+// SAFE VANITY ROLE SYSTEM
 // =========================
 client.on("presenceUpdate", async (_, newP) => {
     try {
@@ -70,8 +70,10 @@ client.on("presenceUpdate", async (_, newP) => {
         const role = member.guild.roles.cache.get(process.env.ROLE_ID);
         if (!role) return;
 
-        const custom = newP?.activities?.find(a => a.type === 4);
-        const text = (custom?.state || "").toLowerCase();
+        const activities = newP?.activities || [];
+        const status = activities.find(a => a.type === 4);
+
+        const text = (status?.state || "").toLowerCase();
 
         if (text.includes(SUPPORT_LINK)) {
             if (!member.roles.cache.has(role.id)) {
@@ -79,26 +81,26 @@ client.on("presenceUpdate", async (_, newP) => {
             }
         }
     } catch (e) {
-        console.error("role error:", e);
+        console.error("presence error:", e);
     }
 });
 
 // =========================
-// SLASH COMMANDS (CLEAN)
+// SLASH COMMANDS
 // =========================
 const commands = [
     {
         name: "winner",
-        description: "Declare winner and log payout",
+        description: "Log winner payout",
         options: [
-            { name: "user", description: "Winner user", type: 6, required: true },
-            { name: "amount", description: "Prize amount", type: 10, required: true },
-            { name: "note", description: "Giveaway name / note", type: 3, required: true }
+            { name: "user", description: "Winner", type: 6, required: true },
+            { name: "amount", description: "Prize", type: 10, required: true },
+            { name: "note", description: "Giveaway name", type: 3, required: true }
         ]
     },
     {
         name: "history",
-        description: "Check user win history",
+        description: "Check user history",
         options: [
             { name: "user", description: "User", type: 6, required: false }
         ]
@@ -109,7 +111,7 @@ const commands = [
     },
     {
         name: "vanitycheck",
-        description: "Check all supporter roles manually"
+        description: "Sync supporter roles"
     }
 ];
 
@@ -132,7 +134,7 @@ client.once("ready", async () => {
 });
 
 // =========================
-// INTERACTIONS SAFE HANDLER
+// INTERACTIONS
 // =========================
 client.on("interactionCreate", async (interaction) => {
     try {
@@ -141,7 +143,7 @@ client.on("interactionCreate", async (interaction) => {
         let db = loadDB();
 
         // =========================
-        // 🏆 WINNER (FIXED LOG + DM + HISTORY)
+        // 🏆 WINNER SYSTEM
         // =========================
         if (interaction.commandName === "winner") {
 
@@ -153,7 +155,7 @@ client.on("interactionCreate", async (interaction) => {
                 db[user.id] = { wins: 0, total: 0, history: [] };
             }
 
-            db[user.id].wins += 1;
+            db[user.id].wins++;
             db[user.id].total += amount;
             db[user.id].history.push({
                 note,
@@ -163,12 +165,11 @@ client.on("interactionCreate", async (interaction) => {
 
             saveDB(db);
 
-            // ===== LOG EMBED =====
             const logEmbed = new EmbedBuilder()
                 .setTitle("🏆 WINNER LOGGED")
                 .setColor("Gold")
                 .setDescription(
-                    `👤 User: <@${user.id}>\n💰 Prize: $${amount}\n🎁 Note: ${note}\n🆔 ID: ${user.id}`
+                    `👤 <@${user.id}>\n💰 $${amount}\n🎁 ${note}\n🆔 ${user.id}`
                 );
 
             const logChannel = interaction.guild.channels.cache.get(WINNER_LOG_CHANNEL);
@@ -176,24 +177,23 @@ client.on("interactionCreate", async (interaction) => {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ===== DM USER =====
             const dmEmbed = new EmbedBuilder()
-                .setTitle("💰 Your payout has been successfully processed.")
+                .setTitle("💰 Payout Processed")
                 .setColor("Green")
                 .setDescription(
-                    `💰 **Prize:** $${amount}\n🎁 **Note:** ${note}\n\n🙏 Thank you for supporting our community!\nPlease vouch using the button below.`
+                    `💰 Prize: $${amount}\n🎁 Giveaway: ${note}\n\n🙏 Thank you for supporting!`
                 );
 
-            const dmRow = new ActionRowBuilder().addComponents(
+            const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setLabel("Vouch Here")
                     .setStyle(ButtonStyle.Link)
                     .setURL(`https://discord.com/channels/${interaction.guild.id}/${VOUCH_CHANNEL}`)
             );
 
-            user.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
+            user.send({ embeds: [dmEmbed], components: [row] }).catch(() => {});
 
-            return interaction.reply({ content: "✅ Winner logged successfully", ephemeral: true });
+            return interaction.reply({ content: "✅ Winner logged", ephemeral: true });
         }
 
         // =========================
@@ -205,11 +205,11 @@ client.on("interactionCreate", async (interaction) => {
             const data = db[user.id];
 
             if (!data || !data.history?.length) {
-                return interaction.reply({ content: "❌ No history found", ephemeral: true });
+                return interaction.reply({ content: "❌ No history", ephemeral: true });
             }
 
             const embed = new EmbedBuilder()
-                .setTitle(`📜 ${user.username} History`)
+                .setTitle(`${user.username} History`)
                 .setColor("Blue")
                 .setDescription(
                     data.history.map(h =>
@@ -218,7 +218,7 @@ client.on("interactionCreate", async (interaction) => {
                 )
                 .addFields(
                     { name: "Wins", value: `${data.wins}`, inline: true },
-                    { name: "Total Earned", value: `$${data.total}`, inline: true }
+                    { name: "Total", value: `$${data.total}`, inline: true }
                 );
 
             return interaction.reply({ embeds: [embed] });
@@ -235,65 +235,75 @@ client.on("interactionCreate", async (interaction) => {
                 m.roles.cache.has(process.env.ROLE_ID)
             ).size;
 
-            let totalWins = 0;
-            let totalMoney = 0;
+            let wins = 0;
+            let money = 0;
 
             for (const id in db) {
-                totalWins += db[id].wins || 0;
-                totalMoney += db[id].total || 0;
+                wins += db[id].wins || 0;
+                money += db[id].total || 0;
             }
 
             const embed = new EmbedBuilder()
-                .setTitle("📊 Server Stats")
+                .setTitle("📊 Stats")
                 .setColor("#00ffff")
                 .addFields(
                     { name: "Members", value: `${guild.memberCount}`, inline: true },
                     { name: "Supporters", value: `${supporters}`, inline: true },
-                    { name: "Total Wins", value: `${totalWins}`, inline: true },
-                    { name: "Total Payout", value: `$${totalMoney}` }
+                    { name: "Wins", value: `${wins}`, inline: true },
+                    { name: "Payouts", value: `$${money}` }
                 );
 
             return interaction.reply({ embeds: [embed] });
         }
 
         // =========================
-        // 🔥 VANITY CHECK (MANUAL ROLE SYNC)
+        // 🔥 VANITY CHECK (FIXED FULL SYNC)
         // =========================
         if (interaction.commandName === "vanitycheck") {
 
-            await interaction.reply({ content: "🔍 Checking members...", ephemeral: true });
+            await interaction.reply({ content: "🔍 Syncing roles...", ephemeral: true });
 
             const role = interaction.guild.roles.cache.get(process.env.ROLE_ID);
             if (!role) return;
 
-            let added = 0;
-
             const members = await interaction.guild.members.fetch();
 
-            for (const member of members.values()) {
-                const status = member.presence?.activities?.find(a => a.type === 4);
-                const text = (status?.state || "").toLowerCase();
+            let added = 0;
+            let removed = 0;
 
-                if (text.includes(SUPPORT_LINK)) {
+            for (const member of members.values()) {
+
+                const activities = member.presence?.activities || [];
+                const status = activities.find(a => a.type === 4);
+
+                const text = (status?.state || "").toLowerCase();
+                const has = text.includes(SUPPORT_LINK);
+
+                if (has) {
                     if (!member.roles.cache.has(role.id)) {
                         await member.roles.add(role).catch(() => {});
                         added++;
+                    }
+                } else {
+                    if (member.roles.cache.has(role.id)) {
+                        await member.roles.remove(role).catch(() => {});
+                        removed++;
                     }
                 }
             }
 
             return interaction.followUp({
-                content: `✅ Vanity check complete. Roles updated: **${added}**`,
+                content: `✅ Done\n➕ Added: ${added}\n➖ Removed: ${removed}`,
                 ephemeral: true
             });
         }
 
     } catch (err) {
-        console.error("interaction error:", err);
+        console.error(err);
 
         if (!interaction.replied) {
             interaction.reply({
-                content: "❌ Command failed. Please try again.",
+                content: "❌ Error occurred",
                 ephemeral: true
             });
         }
