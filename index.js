@@ -11,33 +11,38 @@ const {
     ButtonStyle
 } = require("discord.js");
 
-// =====================
-// CLIENT (SAFE)
-// =====================
+const fs = require("fs");
+
+// =========================
+// CLIENT
+// =========================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences
-    ]
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.DirectMessages
+    ],
+    partials: ["CHANNEL"]
 });
 
-// =====================
+// =========================
 // CONFIG
-// =====================
+// =========================
 const SUPPORT_LINK = "discord.gg/pikpa";
-const WINNER_LOG = "1506457793132232774";
 
-// =====================
-// SAFE DB
-// =====================
-const fs = require("fs");
+const WINNER_LOG = "1506457793132232774";
+const VOUCH_CHANNEL = "1512778450186932334";
+
+// =========================
+// DATABASE
+// =========================
 const DB_FILE = "./data.json";
 
 function loadDB() {
-    if (!fs.existsSync(DB_FILE)) return {};
     try {
-        return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+        if (!fs.existsSync(DB_FILE)) return {};
+        return JSON.parse(fs.readFileSync(DB_FILE));
     } catch {
         return {};
     }
@@ -47,10 +52,10 @@ function saveDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-// =====================
-// SUPPORTER ROLE SYSTEM
-// =====================
-client.on("presenceUpdate", async (oldP, newP) => {
+// =========================
+// SUPPORTER ROLE SYSTEM (FIXED)
+// =========================
+client.on("presenceUpdate", async (_, newP) => {
     try {
         const member = newP?.member;
         if (!member) return;
@@ -58,70 +63,42 @@ client.on("presenceUpdate", async (oldP, newP) => {
         const role = member.guild.roles.cache.get(process.env.ROLE_ID);
         if (!role) return;
 
-        const status = newP?.activities?.find(a => a.type === 4);
-        const text = (status?.state || "").toLowerCase();
+        const custom = newP?.activities?.find(a => a.type === 4);
+        const text = (custom?.state || "").toLowerCase();
 
         if (text.includes(SUPPORT_LINK)) {
             if (!member.roles.cache.has(role.id)) {
                 await member.roles.add(role).catch(() => {});
+                console.log(`+ Role given to ${member.user.tag}`);
             }
         }
-    } catch (e) {
-        console.error("presence error", e);
+    } catch (err) {
+        console.error("Support role error:", err);
     }
 });
 
-// =====================
-// SAFE SLASH COMMANDS (NO UNDEFINED EVER)
-// =====================
+// =========================
+// SLASH COMMANDS
+// =========================
 const commands = [
     {
         name: "winner",
         description: "Declare giveaway winner",
         options: [
-            {
-                name: "user",
-                description: "Winner user",
-                type: 6,
-                required: true
-            },
-            {
-                name: "amount",
-                description: "Prize amount",
-                type: 10,
-                required: true
-            },
-            {
-                name: "giveaway",
-                description: "Giveaway name",
-                type: 3,
-                required: true
-            }
+            { name: "user", description: "Winner", type: 6, required: true },
+            { name: "amount", description: "Prize", type: 10, required: true },
+            { name: "giveaway", description: "Giveaway name", type: 3, required: true }
         ]
     },
-
-    {
-        name: "history",
-        description: "Check user history",
-        options: [
-            {
-                name: "user",
-                description: "User",
-                type: 6,
-                required: false
-            }
-        ]
-    },
-
     {
         name: "stats",
         description: "Server stats"
     }
 ];
 
-// =====================
-// REGISTER COMMANDS (SAFE FIX)
-// =====================
+// =========================
+// REGISTER COMMANDS
+// =========================
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 client.once("ready", async () => {
@@ -133,37 +110,33 @@ client.once("ready", async () => {
             { body: commands }
         );
 
-        console.log("✅ Commands registered successfully");
+        console.log("✅ Slash commands registered");
     } catch (err) {
-        console.error("❌ Command error:", err);
+        console.error("Command error:", err);
     }
 });
 
-// =====================
+// =========================
 // INTERACTIONS
-// =====================
+// =========================
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     let db = loadDB();
 
-    // =====================
-    // 🏆 WINNER
-    // =====================
+    // =========================
+    // 🏆 WINNER SYSTEM (FULL FIXED FLOW)
+    // =========================
     if (interaction.commandName === "winner") {
         const user = interaction.options.getUser("user");
         const amount = interaction.options.getNumber("amount");
         const giveaway = interaction.options.getString("giveaway");
 
-        if (!user || !amount || !giveaway) {
-            return interaction.reply({ content: "❌ Missing data", ephemeral: true });
-        }
-
         if (!db[user.id]) {
             db[user.id] = { wins: 0, prize: 0, history: [] };
         }
 
-        db[user.id].wins += 1;
+        db[user.id].wins++;
         db[user.id].prize += amount;
         db[user.id].history.push({
             giveaway,
@@ -173,59 +146,56 @@ client.on("interactionCreate", async (interaction) => {
 
         saveDB(db);
 
+        // =========================
+        // EMBED (LOG CHANNEL)
+        // =========================
         const embed = new EmbedBuilder()
-            .setTitle("🏆 Winner Selected")
+            .setTitle("🏆 Giveaway Winner")
             .setColor("Gold")
             .setDescription(
-                `🎉 Winner: ${user}\n💰 Prize: $${amount}\n🎁 Giveaway: ${giveaway}`
+                `🎁 Giveaway: **${giveaway}**\n💰 Prize: **$${amount}**\n👤 Winner: <@${user.id}>`
             );
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setLabel("Vouch Link")
+                .setLabel("Vouch Here")
                 .setStyle(ButtonStyle.Link)
-                .setURL("https://discord.com/channels/1450787742219767861/1512778450186932334")
+                .setURL(`https://discord.com/channels/${interaction.guild.id}/${VOUCH_CHANNEL}`)
         );
 
-        const log = interaction.guild.channels.cache.get(WINNER_LOG);
-        if (log) log.send({ embeds: [embed], components: [row] });
-
-        user.send({ embeds: [embed], components: [row] }).catch(() => {});
-
-        return interaction.reply({ content: "✅ Winner logged", ephemeral: true });
-    }
-
-    // =====================
-    // 📜 HISTORY
-    // =====================
-    if (interaction.commandName === "history") {
-        const user = interaction.options.getUser("user") || interaction.user;
-
-        const data = db[user.id];
-
-        if (!data || !data.history?.length) {
-            return interaction.reply({ content: "❌ No history found", ephemeral: true });
+        // =========================
+        // SEND TO LOG CHANNEL
+        // =========================
+        const logChannel = interaction.guild.channels.cache.get(WINNER_LOG);
+        if (logChannel) {
+            logChannel.send({ embeds: [embed], components: [row] });
         }
 
-        const embed = new EmbedBuilder()
-            .setTitle(`${user.username} History`)
-            .setColor("Blue")
+        // =========================
+        // DM USER (YOUR CUSTOM MESSAGE)
+        // =========================
+        const dmEmbed = new EmbedBuilder()
+            .setTitle("🎉 Your payout has been successfully processed.")
+            .setColor("Green")
             .setDescription(
-                data.history.map(h =>
-                    `🎁 ${h.giveaway} | 💰 $${h.amount}`
-                ).join("\n")
-            )
-            .addFields(
-                { name: "Wins", value: `${data.wins}`, inline: true },
-                { name: "Total", value: `$${data.prize}`, inline: true }
+                `💰 **Prize:** $${amount}\n🎁 **Giveaway:** ${giveaway}\n\n🙏 Thank you for supporting our community!\n\nPlease vouch using the button below.`
             );
 
-        return interaction.reply({ embeds: [embed] });
+        const dmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel("Vouch Now")
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://discord.com/channels/${interaction.guild.id}/${VOUCH_CHANNEL}`)
+        );
+
+        user.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
+
+        return interaction.reply({ content: "✅ Winner processed successfully", ephemeral: true });
     }
 
-    // =====================
+    // =========================
     // 📊 STATS
-    // =====================
+    // =========================
     if (interaction.commandName === "stats") {
         const guild = interaction.guild;
 
@@ -255,4 +225,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
+// =========================
+// LOGIN
+// =========================
 client.login(process.env.TOKEN);
