@@ -21,7 +21,9 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ],
     partials: ["CHANNEL"]
 });
@@ -35,7 +37,7 @@ const WINNER_LOG_CHANNEL = "1514526513045835846";
 const VOUCH_CHANNEL = "1512778450186932334";
 
 // =========================
-// DB SYSTEM
+// DB
 // =========================
 const DB_FILE = "./data.json";
 
@@ -81,7 +83,35 @@ client.on("presenceUpdate", async (_, newP) => {
             }
         }
     } catch (e) {
-        console.error("role error:", e);
+        console.error(e);
+    }
+});
+
+// =========================
+// AUTO VOUCH LOGGER (NEW)
+// =========================
+client.on("messageCreate", async (message) => {
+
+    if (message.author.bot) return;
+    if (message.channel.id !== VOUCH_CHANNEL) return;
+
+    const db = loadDB();
+
+    const userId = message.mentions.users.first()?.id;
+    if (!userId) return;
+
+    const embed = new EmbedBuilder()
+        .setTitle("🔥 AUTO VOUCH LOGGED")
+        .setColor("#00ff99")
+        .addFields(
+            { name: "👤 User", value: `<@${userId}>`, inline: true },
+            { name: "💬 Message", value: message.content || "No message", inline: false }
+        )
+        .setTimestamp();
+
+    const logChannel = message.guild.channels.cache.get(WINNER_LOG_CHANNEL);
+    if (logChannel) {
+        logChannel.send({ embeds: [embed] });
     }
 });
 
@@ -93,41 +123,22 @@ const commands = [
         name: "winner",
         description: "Log winner payout",
         options: [
-            {
-                name: "user",
-                description: "Winner user",
-                type: 6,
-                required: true
-            },
-            {
-                name: "amount",
-                description: "Prize amount ($)",
-                type: 10,
-                required: true
-            },
-            {
-                name: "note",
-                description: "Optional note (can be empty)",
-                type: 3,
-                required: false
-            }
+            { name: "user", type: 6, required: true },
+            { name: "amount", type: 10, required: true },
+            { name: "giveaway", type: 3, required: true },
+            { name: "note", type: 3, required: false }
         ]
     },
     {
         name: "history",
-        description: "Check user win history",
+        description: "Check history",
         options: [
-            {
-                name: "user",
-                description: "User",
-                type: 6,
-                required: false
-            }
+            { name: "user", type: 6, required: false }
         ]
     },
     {
         name: "stats",
-        description: "Server statistics"
+        description: "Server stats"
     },
     {
         name: "vanitycheck",
@@ -146,10 +157,9 @@ client.once("ready", async () => {
             Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
             { body: commands }
         );
-
-        console.log("✅ Slash commands registered");
+        console.log("✅ Commands registered");
     } catch (err) {
-        console.error("Command error:", err);
+        console.error(err);
     }
 });
 
@@ -163,24 +173,26 @@ client.on("interactionCreate", async (interaction) => {
         let db = loadDB();
 
         // =========================
-        // 🏆 WINNER SYSTEM (PRO UI FIXED)
+        // 🏆 WINNER FIXED
         // =========================
         if (interaction.commandName === "winner") {
 
             const user = interaction.options.getUser("user");
             const amount = interaction.options.getNumber("amount");
-
-            // ✅ SAFE NOTE HANDLING (NO NULL EVER)
+            const giveaway = interaction.options.getString("giveaway");
             const noteRaw = interaction.options.getString("note");
-            const note = noteRaw && noteRaw.trim().length > 0 ? noteRaw : "No special note provided";
+
+            const note = noteRaw?.trim() ? noteRaw : "No special note provided";
 
             if (!db[user.id]) {
                 db[user.id] = { wins: 0, total: 0, history: [] };
             }
 
-            db[user.id].wins += 1;
+            db[user.id].wins++;
             db[user.id].total += amount;
+
             db[user.id].history.push({
+                giveaway,
                 note,
                 amount,
                 time: Date.now()
@@ -189,7 +201,7 @@ client.on("interactionCreate", async (interaction) => {
             saveDB(db);
 
             // =========================
-            // 🏆 BEAUTIFUL LOG EMBED
+            // LOG EMBED
             // =========================
             const logEmbed = new EmbedBuilder()
                 .setTitle("🏆 WINNER DECLARED")
@@ -198,44 +210,39 @@ client.on("interactionCreate", async (interaction) => {
                 .addFields(
                     { name: "👤 Winner", value: `<@${user.id}>`, inline: true },
                     { name: "💰 Prize", value: `$${amount}`, inline: true },
-                    { name: "🎁 Note", value: note, inline: false },
+                    { name: "🎁 Giveaway", value: giveaway, inline: false },
+                    { name: "📝 Special Note", value: note, inline: false },
                     { name: "🆔 User ID", value: `${user.id}`, inline: false }
                 )
                 .setTimestamp();
 
             const logChannel = interaction.guild.channels.cache.get(WINNER_LOG_CHANNEL);
-            if (logChannel) {
-                logChannel.send({ embeds: [logEmbed] });
-            }
+            if (logChannel) logChannel.send({ embeds: [logEmbed] });
 
             // =========================
-            // 💰 BEAUTIFUL DM MESSAGE (YOUR STYLE)
+            // DM
             // =========================
             const dmEmbed = new EmbedBuilder()
-                .setTitle("💰 Your payout has been successfully processed.")
+                .setTitle("💰 Payout Processed")
                 .setColor("#2ecc71")
                 .setDescription(
-                    `💰 **Prize:** $${amount}\n🎁 **Note:** ${note}\n\n🙏 Thank you for supporting our community!\nPlease vouch using the button below.`
-                )
-                .setFooter({ text: "Vanity Rewards System" });
+                    `💰 **Prize:** $${amount}\n🎁 **Giveaway:** ${giveaway}\n📝 **Note:** ${note}\n\n🙏 Thanks for support!\nPlease vouch below.`
+                );
 
-            const dmRow = new ActionRowBuilder().addComponents(
+            const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setLabel("Vouch Now")
+                    .setLabel("Vouch Here")
                     .setStyle(ButtonStyle.Link)
                     .setURL(`https://discord.com/channels/${interaction.guild.id}/${VOUCH_CHANNEL}`)
             );
 
-            user.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
+            user.send({ embeds: [dmEmbed], components: [row] }).catch(() => {});
 
-            return interaction.reply({
-                content: "✅ Winner successfully logged",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "✅ Winner logged", ephemeral: true });
         }
 
         // =========================
-        // 📜 HISTORY (CLEAN UI)
+        // HISTORY
         // =========================
         if (interaction.commandName === "history") {
 
@@ -247,32 +254,27 @@ client.on("interactionCreate", async (interaction) => {
             }
 
             const embed = new EmbedBuilder()
-                .setTitle(`📜 ${user.username} Win History`)
+                .setTitle(`📜 ${user.username} History`)
                 .setColor("#3498db")
-                .setThumbnail(user.displayAvatarURL())
                 .setDescription(
                     data.history.map((h, i) =>
-                        `**#${i + 1}**\n🎁 Note: ${h.note}\n💰 Amount: $${h.amount}`
+                        `**#${i + 1}**\n🎁 ${h.giveaway}\n📝 ${h.note}\n💰 $${h.amount}`
                     ).join("\n\n")
                 )
                 .addFields(
-                    { name: "🏆 Total Wins", value: `${data.wins}`, inline: true },
-                    { name: "💰 Total Earned", value: `$${data.total}`, inline: true }
+                    { name: "🏆 Wins", value: `${data.wins}`, inline: true },
+                    { name: "💰 Total", value: `$${data.total}`, inline: true }
                 );
 
             return interaction.reply({ embeds: [embed] });
         }
 
         // =========================
-        // 📊 STATS
+        // STATS
         // =========================
         if (interaction.commandName === "stats") {
 
             const guild = interaction.guild;
-
-            const supporters = guild.members.cache.filter(m =>
-                m.roles.cache.has(process.env.ROLE_ID)
-            ).size;
 
             let wins = 0;
             let total = 0;
@@ -283,28 +285,25 @@ client.on("interactionCreate", async (interaction) => {
             }
 
             const embed = new EmbedBuilder()
-                .setTitle("📊 Server Statistics")
+                .setTitle("📊 Stats")
                 .setColor("#00ffff")
                 .addFields(
-                    { name: "👥 Members", value: `${guild.memberCount}`, inline: true },
-                    { name: "⭐ Supporters", value: `${supporters}`, inline: true },
-                    { name: "🏆 Wins", value: `${wins}`, inline: true },
-                    { name: "💰 Total Paid", value: `$${total}` }
+                    { name: "Members", value: `${guild.memberCount}`, inline: true },
+                    { name: "Wins", value: `${wins}`, inline: true },
+                    { name: "Payouts", value: `$${total}` }
                 );
 
             return interaction.reply({ embeds: [embed] });
         }
 
         // =========================
-        // 🔥 VANITY CHECK (SYNC SYSTEM)
+        // VANITY CHECK
         // =========================
         if (interaction.commandName === "vanitycheck") {
 
-            await interaction.reply({ content: "🔍 Syncing supporter roles...", ephemeral: true });
+            await interaction.reply({ content: "🔍 Syncing...", ephemeral: true });
 
             const role = interaction.guild.roles.cache.get(process.env.ROLE_ID);
-            if (!role) return;
-
             const members = await interaction.guild.members.fetch();
 
             let added = 0;
@@ -332,20 +331,13 @@ client.on("interactionCreate", async (interaction) => {
             }
 
             return interaction.followUp({
-                content: `✅ Vanity Sync Complete\n➕ Added: ${added}\n➖ Removed: ${removed}`,
+                content: `✅ Done\n➕ Added: ${added}\n➖ Removed: ${removed}`,
                 ephemeral: true
             });
         }
 
     } catch (err) {
         console.error(err);
-
-        if (!interaction.replied) {
-            interaction.reply({
-                content: "❌ Something went wrong",
-                ephemeral: true
-            });
-        }
     }
 });
 
