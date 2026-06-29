@@ -3,7 +3,11 @@ const {
     Client,
     GatewayIntentBits,
     PermissionsBitField,
-    EmbedBuilder
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    Events
 } = require("discord.js");
 
 const fs = require("fs");
@@ -35,9 +39,9 @@ client.once("ready", () => {
 });
 
 
-// =====================
-// 🔥 SUPPORTER ROLE (AUTO ADD ONLY)
-// =====================
+// =========================
+// 🔥 AUTO SUPPORTER ROLE (ONLY ADD)
+// =========================
 client.on("presenceUpdate", async (oldPresence, newPresence) => {
     try {
         const member = newPresence?.member;
@@ -54,7 +58,6 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
         if (text.includes(SUPPORT_LINK)) {
             if (!member.roles.cache.has(role.id)) {
                 await member.roles.add(role);
-                console.log(`+ Role added: ${member.user.tag}`);
             }
         }
 
@@ -64,16 +67,13 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 });
 
 
-// =====================
-// 🔥 COMMANDS
-// =====================
+// =========================
+// 🟢 /vanitycheck (UI + IDs)
+// =========================
 client.on("messageCreate", async (message) => {
     try {
         if (message.author.bot) return;
 
-        // =====================
-        // /vanitycheck
-        // =====================
         if (message.content === "/vanitycheck") {
             if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
                 return;
@@ -84,49 +84,60 @@ client.on("messageCreate", async (message) => {
             let added = 0;
             let removed = 0;
 
+            let addedUsers = [];
+            let removedUsers = [];
+
             const role = message.guild.roles.cache.get(process.env.ROLE_ID);
 
             for (const [, member] of message.guild.members.cache) {
                 if (member.user.bot) continue;
+
                 checked++;
 
                 const presence = member.presence;
-                const activities = presence?.activities || [];
-                const customStatus = activities.find(a => a.type === 4);
+                const activity = presence?.activities?.find(a => a.type === 4);
 
-                const text = (customStatus?.state || "").toLowerCase();
-
+                const text = (activity?.state || "").toLowerCase();
                 const hasSupport = text.includes(SUPPORT_LINK);
 
                 if (hasSupport) {
                     if (role && !member.roles.cache.has(role.id)) {
                         await member.roles.add(role);
                         added++;
+                        addedUsers.push(`${member.user.tag} (${member.id})`);
                     }
                 } else {
                     if (role && member.roles.cache.has(role.id)) {
                         await member.roles.remove(role);
                         removed++;
+                        removedUsers.push(`${member.user.tag} (${member.id})`);
                     }
                 }
             }
 
             const embed = new EmbedBuilder()
-                .setTitle("🔍 Vanity Check Complete")
+                .setTitle("⚡ VANITY CHECK REPORT")
+                .setColor("#00ff99")
                 .addFields(
-                    { name: "Checked", value: `${checked}`, inline: true },
-                    { name: "Added", value: `${added}`, inline: true },
-                    { name: "Removed", value: `${removed}`, inline: true }
+                    { name: "👥 Checked", value: `${checked}`, inline: true },
+                    { name: "➕ Added", value: `${added}`, inline: true },
+                    { name: "➖ Removed", value: `${removed}`, inline: true }
                 )
-                .setColor("Green");
+                .setFooter({ text: "System Auto Report • Support Bot" });
+
+            if (addedUsers.length)
+                embed.addFields({ name: "➕ Added Users", value: addedUsers.slice(0, 10).join("\n") });
+
+            if (removedUsers.length)
+                embed.addFields({ name: "➖ Removed Users", value: removedUsers.slice(0, 10).join("\n") });
 
             message.channel.send({ embeds: [embed] });
         }
 
 
-        // =====================
-        // /winner @user amount
-        // =====================
+        // =========================
+        // 🏆 /winner (UI + buttons + ID log)
+        // =========================
         if (message.content.startsWith("/winner")) {
             if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
                 return;
@@ -134,22 +145,21 @@ client.on("messageCreate", async (message) => {
             const user = message.mentions.users.first();
             if (!user) return message.reply("Mention a user");
 
-            const amount = parseFloat(message.content.split(" ")[2]) || 1;
+            const args = message.content.split(" ");
+            const amount = args[2] || "1";
+            const giveawayName = args.slice(3).join(" ") || "Unknown Giveaway";
 
             let data = loadData();
 
             if (!data[user.id]) {
-                data[user.id] = {
-                    wins: 0,
-                    prize: 0,
-                    history: []
-                };
+                data[user.id] = { wins: 0, prize: 0, history: [] };
             }
 
             data[user.id].wins += 1;
-            data[user.id].prize += amount;
+            data[user.id].prize += parseFloat(amount);
             data[user.id].history.push({
                 prize: amount,
+                giveaway: giveawayName,
                 date: new Date().toISOString()
             });
 
@@ -158,21 +168,37 @@ client.on("messageCreate", async (message) => {
             const logChannel = message.guild.channels.cache.get("1514526513045835846");
 
             const embed = new EmbedBuilder()
-                .setTitle("🏆 Giveaway Winner")
-                .setDescription(`${user} won **$${amount}**`)
-                .setColor("Gold");
+                .setTitle("🏆 WINNER CONFIRMED")
+                .setColor("Gold")
+                .addFields(
+                    { name: "👤 Winner", value: `${user} (${user.id})` },
+                    { name: "💰 Prize", value: `$${amount}` },
+                    { name: "🎁 Giveaway", value: giveawayName }
+                );
 
-            if (logChannel) logChannel.send({ embeds: [embed] });
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setLabel("Vouch Link")
+                    .setStyle(ButtonStyle.Link)
+                    .setURL("https://discord.com/channels/1450787742219767861/1506457793132232774")
+            );
 
-            user.send(`🎉 You won $${amount}! Please vouch in server 💎`).catch(() => {});
+            if (logChannel)
+                logChannel.send({ embeds: [embed], components: [row] });
 
-            message.reply("Winner logged.");
+            // DM user
+            user.send({
+                content: `🎉 You won **$${amount}** in **${giveawayName}**`,
+                components: [row]
+            }).catch(() => {});
+
+            message.reply("✅ Winner logged successfully");
         }
 
 
-        // =====================
-        // /history @user
-        // =====================
+        // =========================
+        // 📊 /history
+        // =========================
         if (message.content.startsWith("/history")) {
             const user = message.mentions.users.first() || message.author;
 
@@ -182,14 +208,14 @@ client.on("messageCreate", async (message) => {
             if (!info) return message.reply("No history found.");
 
             message.channel.send(
-                `📊 **${user.username} History**\n\n🏆 Wins: ${info.wins}\n💰 Total: $${info.prize}`
+                `📊 **${user.username} History**\n🏆 Wins: ${info.wins}\n💰 Total: $${info.prize}`
             );
         }
 
 
-        // =====================
-        // /leaderboard
-        // =====================
+        // =========================
+        // 🥇 /leaderboard
+        // =========================
         if (message.content === "/leaderboard") {
             let data = loadData();
 
@@ -197,7 +223,7 @@ client.on("messageCreate", async (message) => {
                 .sort((a, b) => b[1].wins - a[1].wins)
                 .slice(0, 10);
 
-            let text = "🏆 **Leaderboard**\n\n";
+            let text = "🏆 **LEADERBOARD**\n\n";
 
             for (const [id, info] of sorted) {
                 text += `<@${id}> — Wins: ${info.wins} | $${info.prize}\n`;
@@ -207,9 +233,9 @@ client.on("messageCreate", async (message) => {
         }
 
 
-        // =====================
-        // /stats
-        // =====================
+        // =========================
+        // 📈 /stats
+        // =========================
         if (message.content === "/stats") {
             const guild = message.guild;
 
@@ -227,7 +253,7 @@ client.on("messageCreate", async (message) => {
             }
 
             message.channel.send(
-                `📊 **Server Stats**
+                `📊 **SERVER STATS**
 👥 Members: ${guild.memberCount}
 💎 Supporters: ${supporters}
 🏆 Winners: ${totalWinners}
