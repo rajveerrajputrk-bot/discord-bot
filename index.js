@@ -5,18 +5,15 @@ const {
     GatewayIntentBits,
     REST,
     Routes,
-    SlashCommandBuilder,
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle
 } = require("discord.js");
 
-const fs = require("fs");
-
-// =========================
-// 🔥 SAFE CLIENT
-// =========================
+// =====================
+// CLIENT (SAFE)
+// =====================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -25,31 +22,34 @@ const client = new Client({
     ]
 });
 
-// =========================
-// 🔥 SAFE DATABASE
-// =========================
-const DB = "./data.json";
-
-function load() {
-    if (!fs.existsSync(DB)) return {};
-    try { return JSON.parse(fs.readFileSync(DB)); }
-    catch { return {}; }
-}
-
-function save(data) {
-    fs.writeFileSync(DB, JSON.stringify(data, null, 2));
-}
-
-// =========================
-// 🔥 CONFIG
-// =========================
+// =====================
+// CONFIG
+// =====================
 const SUPPORT_LINK = "discord.gg/pikpa";
 const WINNER_LOG = "1506457793132232774";
-const DAILY_LOG = "1512778450186932334";
 
-// =========================
-// 🔥 SUPPORTER ROLE SYSTEM
-// =========================
+// =====================
+// SAFE DB
+// =====================
+const fs = require("fs");
+const DB_FILE = "./data.json";
+
+function loadDB() {
+    if (!fs.existsSync(DB_FILE)) return {};
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    } catch {
+        return {};
+    }
+}
+
+function saveDB(data) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+// =====================
+// SUPPORTER ROLE SYSTEM
+// =====================
 client.on("presenceUpdate", async (oldP, newP) => {
     try {
         const member = newP?.member;
@@ -71,37 +71,57 @@ client.on("presenceUpdate", async (oldP, newP) => {
     }
 });
 
-// =========================
-// 🔥 SLASH COMMANDS (SAFE)
-// =========================
+// =====================
+// SAFE SLASH COMMANDS (NO UNDEFINED EVER)
+// =====================
 const commands = [
-    new SlashCommandBuilder()
-        .setName("winner")
-        .setDescription("Declare winner")
-        .addUserOption(o => o.setName("user").setDescription("Winner").setRequired(true))
-        .addNumberOption(o => o.setName("amount").setDescription("Prize").setRequired(true))
-        .addStringOption(o => o.setName("giveaway").setDescription("Name").setRequired(true)),
+    {
+        name: "winner",
+        description: "Declare giveaway winner",
+        options: [
+            {
+                name: "user",
+                description: "Winner user",
+                type: 6,
+                required: true
+            },
+            {
+                name: "amount",
+                description: "Prize amount",
+                type: 10,
+                required: true
+            },
+            {
+                name: "giveaway",
+                description: "Giveaway name",
+                type: 3,
+                required: true
+            }
+        ]
+    },
 
-    new SlashCommandBuilder()
-        .setName("history")
-        .setDescription("Check user history")
-        .addUserOption(o => o.setName("user").setDescription("User")),
+    {
+        name: "history",
+        description: "Check user history",
+        options: [
+            {
+                name: "user",
+                description: "User",
+                type: 6,
+                required: false
+            }
+        ]
+    },
 
-    new SlashCommandBuilder()
-        .setName("stats")
-        .setDescription("Server stats"),
-
-    new SlashCommandBuilder()
-        .setName("giveaway")
-        .setDescription("Create giveaway")
-        .addStringOption(o => o.setName("name").setRequired(true))
-        .addNumberOption(o => o.setName("prize").setRequired(true))
-        .addStringOption(o => o.setName("time").setRequired(true))
+    {
+        name: "stats",
+        description: "Server stats"
+    }
 ];
 
-// =========================
-// 🔥 REGISTER COMMANDS (FIXED GUILD MODE)
-// =========================
+// =====================
+// REGISTER COMMANDS (SAFE FIX)
+// =====================
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 client.once("ready", async () => {
@@ -113,48 +133,51 @@ client.once("ready", async () => {
             { body: commands }
         );
 
-        console.log("✅ Slash commands registered (INSTANT MODE)");
+        console.log("✅ Commands registered successfully");
     } catch (err) {
-        console.error("Command error:", err);
+        console.error("❌ Command error:", err);
     }
 });
 
-// =========================
-// 🔥 INTERACTIONS
-// =========================
+// =====================
+// INTERACTIONS
+// =====================
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    let data = load();
+    let db = loadDB();
 
-    // =========================
+    // =====================
     // 🏆 WINNER
-    // =========================
+    // =====================
     if (interaction.commandName === "winner") {
-
         const user = interaction.options.getUser("user");
         const amount = interaction.options.getNumber("amount");
         const giveaway = interaction.options.getString("giveaway");
 
-        if (!data[user.id]) {
-            data[user.id] = { wins: 0, prize: 0, history: [] };
+        if (!user || !amount || !giveaway) {
+            return interaction.reply({ content: "❌ Missing data", ephemeral: true });
         }
 
-        data[user.id].wins++;
-        data[user.id].prize += amount;
-        data[user.id].history.push({
+        if (!db[user.id]) {
+            db[user.id] = { wins: 0, prize: 0, history: [] };
+        }
+
+        db[user.id].wins += 1;
+        db[user.id].prize += amount;
+        db[user.id].history.push({
             giveaway,
             amount,
             date: Date.now()
         });
 
-        save(data);
+        saveDB(db);
 
         const embed = new EmbedBuilder()
-            .setTitle("🏆 WINNER CONFIRMED")
+            .setTitle("🏆 Winner Selected")
             .setColor("Gold")
             .setDescription(
-                `🎉 Congrats!\n💰 Prize: $${amount}\n🎁 Giveaway: ${giveaway}\n\n🙏 Thank you for supporting!`
+                `🎉 Winner: ${user}\n💰 Prize: $${amount}\n🎁 Giveaway: ${giveaway}`
             );
 
         const row = new ActionRowBuilder().addComponents(
@@ -172,101 +195,63 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "✅ Winner logged", ephemeral: true });
     }
 
-    // =========================
-    // 📊 HISTORY (FIXED)
-    // =========================
+    // =====================
+    // 📜 HISTORY
+    // =====================
     if (interaction.commandName === "history") {
-
         const user = interaction.options.getUser("user") || interaction.user;
-        const info = data[user.id];
 
-        if (!info || !info.history?.length) {
-            return interaction.reply({ content: "❌ No history found.", ephemeral: true });
+        const data = db[user.id];
+
+        if (!data || !data.history?.length) {
+            return interaction.reply({ content: "❌ No history found", ephemeral: true });
         }
 
         const embed = new EmbedBuilder()
             .setTitle(`${user.username} History`)
             .setColor("Blue")
             .setDescription(
-                info.history.map(h =>
+                data.history.map(h =>
                     `🎁 ${h.giveaway} | 💰 $${h.amount}`
                 ).join("\n")
             )
             .addFields(
-                { name: "Wins", value: `${info.wins}`, inline: true },
-                { name: "Total", value: `$${info.prize}`, inline: true }
+                { name: "Wins", value: `${data.wins}`, inline: true },
+                { name: "Total", value: `$${data.prize}`, inline: true }
             );
 
         return interaction.reply({ embeds: [embed] });
     }
 
-    // =========================
+    // =====================
     // 📊 STATS
-    // =========================
+    // =====================
     if (interaction.commandName === "stats") {
-
         const guild = interaction.guild;
 
         const supporters = guild.members.cache.filter(m =>
             m.roles.cache.has(process.env.ROLE_ID)
         ).size;
 
-        let winners = Object.keys(data).length;
+        let totalWins = 0;
+        let totalPrize = 0;
 
-        let total = 0;
-        for (const id in data) total += data[id].prize || 0;
+        for (const id in db) {
+            totalWins += db[id].wins || 0;
+            totalPrize += db[id].prize || 0;
+        }
 
         const embed = new EmbedBuilder()
-            .setTitle("📊 SERVER STATS")
+            .setTitle("📊 Server Stats")
             .setColor("#00ffff")
             .addFields(
                 { name: "Members", value: `${guild.memberCount}`, inline: true },
                 { name: "Supporters", value: `${supporters}`, inline: true },
-                { name: "Winners", value: `${winners}`, inline: true },
-                { name: "Payout", value: `$${total}` }
+                { name: "Total Wins", value: `${totalWins}`, inline: true },
+                { name: "Total Payout", value: `$${totalPrize}` }
             );
 
         return interaction.reply({ embeds: [embed] });
-    }
-
-    // =========================
-    // 🎁 GIVEAWAY
-    // =========================
-    if (interaction.commandName === "giveaway") {
-
-        const name = interaction.options.getString("name");
-        const prize = interaction.options.getNumber("prize");
-        const time = interaction.options.getString("time");
-
-        const embed = new EmbedBuilder()
-            .setTitle("🎉 GIVEAWAY LIVE")
-            .setColor("#ff00ff")
-            .setDescription(
-                `🎁 ${name}\n💰 $${prize}\n⏰ ${time}`
-            );
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId("join")
-                .setLabel("Join Giveaway")
-                .setStyle(ButtonStyle.Success)
-        );
-
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-});
-
-// =========================
-// 🔥 BUTTON SYSTEM
-// =========================
-client.on("interactionCreate", async (interaction) => {
-    if (!interaction.isButton()) return;
-
-    if (interaction.customId === "join") {
-        return interaction.reply({
-            content: "✅ You joined the giveaway!",
-            ephemeral: true
-        });
     }
 });
 
